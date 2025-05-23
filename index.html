@@ -285,11 +285,13 @@
         }); // end interfaces.forEach 
         datasetLoaded = true; 
         initMap();
+        console.log('Final locations object before initMap:', JSON.stringify(locations, null, 2));
     }; // End processData function
 
     // Function to generate the Map object and add the
     // sites and circuits 
     function initMap () {
+        console.log('initMap called with locations:', JSON.stringify(locations, null, 2));
     	// Wait until the data is present before doing this
 		if (!datasetLoaded) {
 			window.setTimeout(initMap,250);
@@ -302,6 +304,7 @@
                 pos = new google.maps.LatLng(location.info.lat, location.info.lng); 
                 location.position = pos;
                 bounds.extend(pos);
+                console.log('initMap: Extended bounds for', location.Name);
             }); 
 
         function getLatLngCenter(latLngInDegr) {
@@ -356,6 +359,7 @@
         var lineSymbol = { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, strokeColor: "ffffff", strokeWeight: 2, strokeOpacity: .8};
 
         $.each(locations,function(d, markerss){
+            console.log('initMap: Processing location - Name:', markerss.Name, 'ID:', markerss.id, 'Lat:', markerss.info.lat, 'Lng:', markerss.info.lng, 'Icon:', markerss.info.image);
 
             console.log("Placing marker for: name: " + markerss.Name);
 
