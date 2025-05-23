@@ -126,10 +126,21 @@
             });
     }
 
+    function getMonitoringPointsData(callback) {
+        var apiUrl = "https://" + window.MONITORING_API_DOMAIN + "/api/v3/appliance";
+        d3.json(apiUrl)
+            .header("Authorization", "Bearer " + window.MONITORING_API_TOKEN)
+            .get(callback);
+    }
+
     function processData (theData) {
 
         devices=theData[0];
         interfaces=theData[1];
+        // Assuming the new data is the third element in the results array
+        var monitoringPointsData = theData[2]; 
+        console.log("Monitoring Points Data:", monitoringPointsData);
+
 
         devices.forEach(function(d) {
             if ((Number(d.Latitude) != 0) &&  (Number(d.Longitude) != 0)) {
@@ -175,31 +186,75 @@
             }
         });
 
+        // Process Monitoring Points Data (theData[2])
+        if (monitoringPointsData && monitoringPointsData.data && Array.isArray(monitoringPointsData.data)) {
+            monitoringPointsData.data.forEach(function(mp) {
+                console.log("Processing Monitoring Point: " + (mp.name || mp.hostname || mp.id));
+                if (mp.location && mp.location.lat != null && mp.location.lng != null && (Number(mp.location.lat) !== 0 || Number(mp.location.lng) !== 0)) {
+                    var mpKey = 'mp-' + mp.id;
+                    locations[mpKey] = {
+                        Name: mp.name || mp.hostname, // Use hostname if name is not available
+                        id: mp.id,
+                        isMonitoringPoint: true, // Flag to distinguish from regular sites if needed later
+                        info: {
+                            lat: Number(mp.location.lat),
+                            lng: Number(mp.location.lng),
+                            locDesc: mp.location.formattedAddress || mp.name || mp.hostname,
+                            util: mp.load !== undefined ? mp.load.toFixed(2) : 'N/A', // Assuming load is a numeric value
+                            id: mp.id,
+                            ipAddr: mp.resolvedIp || mp.publicIp || 'N/A',
+                            image: './images/pin_blue.png' // Specific icon for monitoring points
+                        }
+                    };
+                    geoCoordinates.push([Number(mp.location.lat), Number(mp.location.lng)]);
+                    console.log("Added Monitoring Point to locations: " + mpKey);
+                } else {
+                    console.log("Skipping Monitoring Point due to invalid location data: " + (mp.name || mp.id));
+                }
+            });
+        } else {
+            console.log("No monitoring points data or data is not in expected format:", monitoringPointsData);
+        }
+
         console.log("Found " + geoCoordinates.length + " latitude, longitude pairs. " +  geoCoordinates);
         //centerMapCoordinates=getLatLngCenter(geoCoordinates);
         //console.log("Calculated center latitude, longitude position: " + centerMapCoordinates);
         //myLatLng = {lat: geoCoordinates[0], lng: geoCoordinates[1]};
 
     interfaces.forEach(function(d){
-    	if (  typeof locations[d['interfaces/ConnectsTo']] === 'undefined' || !locations[d['interfaces/ConnectsTo']]) {
-            console.log("Unable to match interface connection to site: " + d['interfaces/ConnectsTo'])
+        // Ensure that the source location for the interface connection exists
+        // This check is important because 'd.Name' might refer to a site OR a monitoring point
+        var sourceLocationKey = d.Name; // This is the key used for sites
+        // If you adopted a prefix for monitoring points (e.g., 'mp-'), you might need to check for that too
+        // or ensure 'd.Name' correctly matches what's in the `locations` object for monitoring points if they can be sources.
+        // For this example, we'll assume d.Name correctly maps to a key in `locations` or it's a site.
+
+        var sourceLocation = locations[sourceLocationKey];
+        var destinationLocation = locations[d['interfaces/ConnectsTo']];
+
+
+    	if (  typeof destinationLocation === 'undefined' || !destinationLocation) {
+            console.log("Unable to match interface connection to destination site: " + d['interfaces/ConnectsTo'])
+        } else if (typeof sourceLocation === 'undefined' || !sourceLocation) {
+            console.log("Unable to match interface connection to source site/MP: " + sourceLocationKey)
         }
         else {
-            console.log("Found lookup for interface ConnectsTo: " + d['interfaces/ConnectsTo'])
+            console.log("Found lookup for interface ConnectsTo: " + d['interfaces/ConnectsTo']);
+            console.log("Source for connection: " + sourceLocationKey);
             connections[d['interfaces/ID']] = {
             name: d.Name,
             id: d.ID,
             interfaceName: d['interfaces/Name'],
-            sourceLat: locations[d.Name].info.lat,
-            sourceLong: locations[d['Name']].info.lng,
-            destLat: locations[d['interfaces/ConnectsTo']].info.lat,
-            destLong: locations[d['interfaces/ConnectsTo']].info.lng,
-            sourceDevice: d['Name'],
-            sourceDeviceID: d['ID'],
-            sourceLocation: d['Name'],
-            destinationLocation: locations[d['interfaces/ConnectsTo']].info.locDesc,
-            destinationDevice: locations[d['interfaces/ConnectsTo']].info.locDesc,
-            destinationDeviceID: locations[d['interfaces/ConnectsTo']].info.locDesc,
+            sourceLat: sourceLocation.info.lat,
+            sourceLong: sourceLocation.info.lng,
+            destLat: destinationLocation.info.lat,
+            destLong: destinationLocation.info.lng,
+            sourceDevice: sourceLocation.Name, // Use the Name from the locations object
+            sourceDeviceID: sourceLocation.id, // Use the id from the locations object
+            sourceLocation: sourceLocation.Name, // Use the Name
+            destinationLocation: destinationLocation.info.locDesc,
+            destinationDevice: destinationLocation.Name, // Use Name from locations object
+            destinationDeviceID: destinationLocation.id, // Use id from locations object
             speedIn: d['interfaces/SpeedIn'],
             lineThickness: speedThickness(d['interfaces/SpeedIn']),
             metrics: {
@@ -294,13 +349,24 @@
                 icon: markerss.info.image
             });
 
-            var contentString = 
-                '<p class="pair"><h3><span><a href="/pc/redirector?SourceType=262144&LocalID=' + markerss.id + '" target="_blank">' + markerss.Name  + '</a></h3></span></p>' +
-                '<p class="pair"><span>Availability: </span><span>' + markerss.info.util + '</span></p>' +
-                '<p class="pair"><span>IP Address: </span><span>' + markerss.info.ipAddr + '</span></p>' +
-                '<p class="pair"><span>Location: </span><span>' + markerss.info.locDesc + '</span></p>' +
-                '</p>' +
-                '</div>';
+            var contentString;
+            if (markerss.isMonitoringPoint) {
+                contentString =
+                    '<p class="pair"><h3><span>Monitoring Point: ' + markerss.Name + '</span></h3></p>' + // No link for MPs for now
+                    '<p class="pair"><span>ID: </span><span>' + markerss.id + '</span></p>' +
+                    '<p class="pair"><span>Load: </span><span>' + markerss.info.util + '</span></p>' +
+                    '<p class="pair"><span>IP Address: </span><span>' + markerss.info.ipAddr + '</span></p>' +
+                    '<p class="pair"><span>Location: </span><span>' + markerss.info.locDesc + '</span></p>' +
+                    '</div>';
+            } else {
+                contentString =
+                    '<p class="pair"><h3><span><a href="/pc/redirector?SourceType=262144&LocalID=' + markerss.id + '" target="_blank">' + markerss.Name  + '</a></h3></span></p>' +
+                    '<p class="pair"><span>Availability: </span><span>' + markerss.info.util + '</span></p>' +
+                    '<p class="pair"><span>IP Address: </span><span>' + markerss.info.ipAddr + '</span></p>' +
+                    '<p class="pair"><span>Location: </span><span>' + markerss.info.locDesc + '</span></p>' +
+                    '</p>' +
+                    '</div>';
+            }
 
             var infowindow = new google.maps.InfoWindow({
                 maxWidth: 380,
