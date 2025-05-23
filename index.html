@@ -119,27 +119,43 @@
         d3.queue()
             .defer(d3.csv, url1)
             .defer(d3.csv, url2)
+            .defer(getMonitoringPointsData) // Ensure this line is present
             .awaitAll(function(error, results) {
-                if (error) throw error;
+                if (error) {
+                    console.error("Error loading data:", error);
                     spinner.stop();
-                    processData(results);
+                    throw error;
+                }
+                console.log('Monitoring points data received in awaitAll:', results[2]); // Logging point
+                spinner.stop();
+                processData(results);
             });
     }
 
     function getMonitoringPointsData(callback) {
+        console.log('getMonitoringPointsData called'); // Logging point
         var apiUrl = "https://" + window.MONITORING_API_DOMAIN + "/api/v3/appliance";
+        // It's good practice to handle potential errors in API calls
         d3.json(apiUrl)
             .header("Authorization", "Bearer " + window.MONITORING_API_TOKEN)
-            .get(callback);
+            .get(function(error, data) {
+                if (error) {
+                    console.error("Error fetching monitoring points:", error);
+                    return callback(error); // Pass error to d3.queue's awaitAll
+                }
+                return callback(null, data); // Pass data to d3.queue's awaitAll
+            });
     }
 
     function processData (theData) {
+        console.log('processData received monitoring points:', theData[2]); // Logging point
 
         devices=theData[0];
         interfaces=theData[1];
         // Assuming the new data is the third element in the results array
         var monitoringPointsData = theData[2]; 
-        console.log("Monitoring Points Data:", monitoringPointsData);
+        // The existing console.log below is also useful, so keeping it.
+        console.log("Monitoring Points Data (inside processData variable):", monitoringPointsData);
 
 
         devices.forEach(function(d) {
