@@ -203,33 +203,42 @@
         });
 
         // Process Monitoring Points Data (theData[2])
-        if (monitoringPointsData && monitoringPointsData.data && Array.isArray(monitoringPointsData.data)) {
-            monitoringPointsData.data.forEach(function(mp) {
-                console.log("Processing Monitoring Point: " + (mp.name || mp.hostname || mp.id));
-                if (mp.location && mp.location.lat != null && mp.location.lng != null && (Number(mp.location.lat) !== 0 || Number(mp.location.lng) !== 0)) {
-                    var mpKey = 'mp-' + mp.id;
+        // New diagnostic log:
+        console.log('Attempting to process monitoring points from theData[2]. Is it an array?', Array.isArray(monitoringPointsData), 'Length:', monitoringPointsData ? (monitoringPointsData.data ? monitoringPointsData.data.length : (Array.isArray(monitoringPointsData) ? monitoringPointsData.length : 'N/A')) : 'N/A');
+
+        // The actual data seems to be nested under a 'data' property if it's an object from the API
+        var actualMonitoringPointsArray = (monitoringPointsData && Array.isArray(monitoringPointsData.data)) ? monitoringPointsData.data : (Array.isArray(monitoringPointsData) ? monitoringPointsData : []);
+
+        if (actualMonitoringPointsArray.length > 0) {
+            actualMonitoringPointsArray.forEach(function(mp) {
+                var mpName = (mp && (mp.name || mp.hostname)) ? (mp.name || mp.hostname) : 'Unknown MP';
+                var mpId = (mp && mp.id) ? mp.id : 'Unknown ID';
+                console.log("Processing Monitoring Point - Name: " + mpName + ", ID: " + mpId);
+
+                if (mp && mp.location && typeof mp.location.lat === 'number' && typeof mp.location.lng === 'number' && (mp.location.lat !== 0 || mp.location.lng !== 0)) {
+                    var mpKey = 'mp-' + mpId; // Use validated mpId
                     locations[mpKey] = {
-                        Name: mp.name || mp.hostname, // Use hostname if name is not available
-                        id: mp.id,
-                        isMonitoringPoint: true, // Flag to distinguish from regular sites if needed later
+                        Name: mpName, // Use validated mpName
+                        id: mpId,     // Use validated mpId
+                        isMonitoringPoint: true,
                         info: {
                             lat: Number(mp.location.lat),
                             lng: Number(mp.location.lng),
-                            locDesc: mp.location.formattedAddress || mp.name || mp.hostname,
-                            util: mp.load !== undefined ? mp.load.toFixed(2) : 'N/A', // Assuming load is a numeric value
-                            id: mp.id,
-                            ipAddr: mp.resolvedIp || mp.publicIp || 'N/A',
-                            image: './images/pin_blue.png' // Specific icon for monitoring points
+                            locDesc: (mp.location && mp.location.formattedAddress) ? mp.location.formattedAddress : (mpName || 'N/A'),
+                            util: (mp.load !== undefined && mp.load !== null) ? Number(mp.load).toFixed(2) : 'N/A', // Ensure load is treated as number
+                            id: mpId, // Use validated mpId
+                            ipAddr: (mp.resolvedIp || mp.publicIp) || 'N/A',
+                            image: './images/pin_blue.png'
                         }
                     };
                     geoCoordinates.push([Number(mp.location.lat), Number(mp.location.lng)]);
-                    console.log("Added Monitoring Point to locations: " + mpKey);
+                    console.log("Added Monitoring Point to locations: " + mpKey + " (" + mpName + ")");
                 } else {
-                    console.log("Skipping Monitoring Point due to invalid location data: " + (mp.name || mp.id));
+                    console.log("Skipping MP due to missing/invalid location data - ID: " + mpId + ", Name: " + mpName);
                 }
             });
         } else {
-            console.log("No monitoring points data or data is not in expected format:", monitoringPointsData);
+            console.log('No monitoring points to process or monitoringPointsData.data is not a non-empty array.');
         }
 
         console.log("Found " + geoCoordinates.length + " latitude, longitude pairs. " +  geoCoordinates);
